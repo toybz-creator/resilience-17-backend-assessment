@@ -25,6 +25,9 @@ const ENDPOINT_CONFIGS = [
   {
     path: './endpoints/onboarding/',
   },
+  {
+    path: './endpoints/payments/',
+  },
 ];
 
 function logEndpointMetaData(endpointConfigs) {

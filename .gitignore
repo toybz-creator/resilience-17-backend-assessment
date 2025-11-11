@@ -18,4 +18,5 @@ endpoint-data
 *.logs
 
 # OS
-.DS_Store
+.DS_Store.vscode/branch-timer.json
+project-guide/project-guide.md
