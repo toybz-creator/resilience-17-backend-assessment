@@ -1,4 +1,4 @@
-const { createWorker } = require('../core/queue');
+const { createWorker } = require('@app-core/queue');
 const echoLoginValidation = require('./echo-login-validation');
 
 module.exports = {
