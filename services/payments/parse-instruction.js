@@ -1,9 +1,30 @@
 /* eslint camelcase: ["error", { properties: "never" }] */
 /* eslint prefer-destructuring: "off" */
+/**
+ * Payment Instruction Parser & Executor
+ *
+ * Parses a constrained, human-readable payment instruction into structured data,
+ * validates business rules, and computes resulting balances for immediate execution
+ * or marks the transaction as pending for future execution dates.
+ *
+ * Grammar (keywords are case-insensitive):
+ * - DEBIT <amount> <currency> FROM ACCOUNT <debit_id> FOR CREDIT TO ACCOUNT <credit_id> [ON <YYYY-MM-DD>]
+ * - CREDIT <amount> <currency> TO ACCOUNT <credit_id> FOR DEBIT FROM ACCOUNT <debit_id> [ON <YYYY-MM-DD>]
+ *
+ * Returns { httpCode, payload } with snake_case keys preserved in the payload
+ * (e.g., status_code, status_reason) to match the tested API contract.
+ */
 const { PaymentMessages } = require('@app/messages');
 
+/** Supported currencies for validation (uppercased for comparison). */
 const SUPPORTED_CURRENCIES = ['NGN', 'USD', 'GBP', 'GHS'];
 
+/**
+ * Checks whether a character is alphanumeric or one of '-', '.', '@'.
+ * Used to validate account identifiers.
+ * @param {string} ch
+ * @returns {boolean}
+ */
 function isAlphaNumOrAllowed(ch) {
   const code = ch.charCodeAt(0);
   const isDigit = code >= 48 && code <= 57;
@@ -13,6 +34,12 @@ function isAlphaNumOrAllowed(ch) {
   return isDigit || isUpper || isLower || isAllowed;
 }
 
+/**
+ * Determines if a string is a strictly positive integer.
+ * Disallows signs and non-digit characters; disallows zero-only values.
+ * @param {string} str
+ * @returns {boolean}
+ */
 function isPositiveIntegerString(str) {
   if (!str || typeof str !== 'string') return false;
   let i = 0;
@@ -35,6 +62,11 @@ function isPositiveIntegerString(str) {
   return !allZero;
 }
 
+/**
+ * Validates the simple date format YYYY-MM-DD (no calendar checks).
+ * @param {string} str
+ * @returns {boolean}
+ */
 function isValidDateYYYYMMDD(str) {
   if (!str || str.length !== 10) return false;
   // YYYY-MM-DD, positions 4 and 7 must be '-'
@@ -49,6 +81,11 @@ function isValidDateYYYYMMDD(str) {
   return true;
 }
 
+/**
+ * Collapses all whitespace runs (space/tab/newline) to single spaces and trims.
+ * @param {string} text
+ * @returns {string}
+ */
 function normalizeSpaces(text) {
   let out = '';
   let prevSpace = false;
@@ -68,6 +105,12 @@ function normalizeSpaces(text) {
   return out.trim();
 }
 
+/**
+ * Finds an account by id from the provided list.
+ * @param {{id:string,currency:string,balance:number}[]} accounts
+ * @param {string} id
+ * @returns {{id:string,currency:string,balance:number}|null}
+ */
 function findAccount(accounts, id) {
   for (let i = 0; i < accounts.length; i += 1) {
     if (accounts[i] && accounts[i].id === id) return accounts[i];
@@ -75,6 +118,20 @@ function findAccount(accounts, id) {
   return null;
 }
 
+/**
+ * Builds the standardized failure payload (snake_case keys preserved).
+ * @param {Object} params
+ * @param {string|null} params.type
+ * @param {number|null} params.amount
+ * @param {string|null} params.currency
+ * @param {string|null} params.debitAccountId
+ * @param {string|null} params.creditAccountId
+ * @param {string|null} params.executeBy
+ * @param {string} params.status_code
+ * @param {string} params.status_reason
+ * @param {{id:string,currency:string,balance:number}[]} accounts
+ * @returns {Object}
+ */
 function buildErrorPayload(
   {
     type,
@@ -125,10 +182,20 @@ function buildErrorPayload(
   return payload;
 }
 
+/**
+ * Produces the current date in YYYY-MM-DD.
+ * @returns {string}
+ */
 function nowDateYMD() {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * Lexicographically compares two YYYY-MM-DD strings.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number} -1 if a<b, 0 if equal, 1 if a>b
+ */
 function compareDatesYMD(a, b) {
   // lexical compare works for YYYY-MM-DD
   if (a === b) return 0;
@@ -136,6 +203,15 @@ function compareDatesYMD(a, b) {
 }
 
 // Main service function
+/**
+ * Parses and executes a payment instruction.
+ * @param {{instruction:string,accounts:{id:string,currency:string,balance:number}[]}} serviceData
+ * @returns {Promise<{httpCode:number,payload:Object}>}
+ * Notes:
+ * - Immediate execution adjusts balances in the payload only; no persistence.
+ * - Pending status is returned for future dates.
+ * - Currency is normalized to uppercase for comparisons and output.
+ */
 async function parseAndExecutePaymentInstruction(serviceData) {
   const { instruction, accounts } = serviceData || {};
 
